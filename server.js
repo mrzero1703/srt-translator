@@ -14,19 +14,30 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 app.use(express.static("public"));
 
 // Dịch từng đoạn
-async function translateWithGemini(text) {
-  try {
-    const response = await model.generate({
-      prompt: `Dịch đoạn sau từ tiếng Trung sang tiếng Việt: "${text}"`,
-      temperature: 0.3,
-      maxOutputTokens: 500
-    });
-    return response.candidates[0].content;
-  } catch (err) {
-    console.error("Lỗi dịch Gemini:", err);
-    return text;
-  }
+async function translateWithGemini(lines) {
+  const prompt = `
+Translate Chinese subtitles to Vietnamese.
+
+Rules:
+- Each input line translates to exactly ONE output line
+- Keep order
+- Short subtitle style
+- NO explanations
+
+INPUT:
+${lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}
+
+OUTPUT:
+`;
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text().trim();
+
+  return text
+    .split("\n")
+    .map(line => line.replace(/^\d+\.\s*/, ""));
 }
+
 
 // Lưu lịch sử
 function saveHistory(item) {
@@ -50,43 +61,54 @@ function parseSRT(content) {
 function buildSRT(blocks) {
   return blocks.map(b => `${b.index}\n${b.time}\n${b.text}\n`).join("\n");
 }
-
-// Translate chunk
-async function translateChunk(blocks) {
-  const translated = [];
-  for (const block of blocks) {
-    if (block.text.trim() !== "") block.text = await translateWithGemini(block.text);
-    translated.push(block);
+function splitArray(arr, size = 10) {
+  const res = [];
+  for (let i = 0; i < arr.length; i += size) {
+    res.push(arr.slice(i, i + size));
   }
-  return translated;
+  return res;
 }
+
+
 
 // Route dịch SRT
 app.post("/translate", upload.single("file"), async (req, res) => {
   try {
     const content = fs.readFileSync(req.file.path, "utf8");
     const subs = parseSRT(content);
+    const chunks = splitArray(subs, 8); // 🔥 nhỏ lại cho an toàn
 
-    const translated = await translateChunk(subs);
+    let translated = [];
+
+    for (const chunk of chunks) {
+      const texts = chunk.map(b => b.text || " ");
+      const results = await translateWithGemini(texts);
+
+      chunk.forEach((b, i) => {
+        b.text = results[i] ?? b.text;
+        translated.push(b);
+      });
+    }
+
     const output = buildSRT(translated);
 
-    const historyItem = {
+    saveHistory({
       id: Date.now(),
       fileName: req.file.originalname,
       time: new Date().toLocaleString("vi-VN"),
       content: output
-    };
-    saveHistory(historyItem);
+    });
 
-    res.setHeader('Content-Disposition', 'attachment; filename="translated.srt"');
-    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=translated.srt");
     res.send(output);
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi dịch Gemini" });
+    console.error("❌ Gemini error:", err);
+    res.status(500).json({ error: "Gemini dịch bị lỗi" });
   }
 });
+
 
 // Lấy lịch sử
 app.get("/history", (req, res) => {
@@ -94,8 +116,12 @@ app.get("/history", (req, res) => {
   if (fs.existsSync(HISTORY_FILE)) history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
   res.json(history);
 });
+
+// Port
 // Quan trọng cho Render: Lắng nghe trên cổng do môi trường cung cấp
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// const PORT = process.env.PORT || 3000;
+// app.listen(PORT, () => {
+//   console.log(`Server is running on port ${PORT}`);
+// });
+
+app.listen(3000, () => console.log("🚀 Server chạy tại http://localhost:3000") );
