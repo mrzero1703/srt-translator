@@ -118,24 +118,7 @@ app.post("/translate", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Lỗi dịch file" });
   }
 });
-reader.onload = () => {
-  const lines = reader.result.split("\n");
 
-  lines.forEach(line => {
-    if (!line.trim()) return;
-    const data = JSON.parse(line);
-
-    if (data.progress) {
-      progressBar.style.width = data.progress + "%";
-    }
-
-    if (data.done) {
-      showTranslatedResult(data.result);
-      progressBar.style.width = "100%";
-      enableUI();
-    }
-  });
-};
 setTimeout(() => {
   if (progress < 100) {
     showWarning("Dịch chậm, đang thử lại...");
