@@ -2,6 +2,7 @@
 require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require("express");
+const app = express();
 const multer = require("multer");
 const fs = require("fs");
 
@@ -10,7 +11,6 @@ const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
 });
 
-const app = express();
 const upload = multer({ dest: "uploads/" });
 const HISTORY_FILE = "history.json";
 
@@ -143,6 +143,7 @@ app.get("/history", (req, res) => {
 
 // Port
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server chạy tại http://localhost:${PORT}`)
-);
+
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+});
