@@ -55,19 +55,19 @@ app.post("/translate", upload.single("srt"), async (req, res) => {
   fs.writeFileSync(outputPath, output, "utf8");
 
   const historyItem = {
-  id: Date.now(),
-  fileName: req.file.originalname,
-  time: new Date().toLocaleString("vi-VN"),
-  content: output
-};
+    id: Date.now(),
+    fileName: req.file.originalname,
+    time: new Date().toLocaleString("vi-VN"),
+    content: output
+  };
 
-saveHistory(historyItem);
+  saveHistory(historyItem);
 
-res.json({
-  text: output,
-  file: fileName,
-  history: historyItem
-});
+  res.json({
+    text: output,
+    file: fileName,
+    history: historyItem
+  });
 
 });
 app.get("/history", (req, res) => {
@@ -117,10 +117,11 @@ app.post("/translate", upload.single("file"), async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Lỗi dịch file" });
   }
+  setTimeout(() => {
+    if (progress < 100) {
+      showWarning("Dịch chậm, đang thử lại...");
+    }
+  }, 60000);
+
 });
 
-setTimeout(() => {
-  if (progress < 100) {
-    showWarning("Dịch chậm, đang thử lại...");
-  }
-}, 60000);
