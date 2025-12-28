@@ -80,3 +80,64 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
+function splitSRT(subtitles, chunkSize = 20) {
+  const chunks = [];
+  for (let i = 0; i < subtitles.length; i += chunkSize) {
+    chunks.push(subtitles.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+app.post("/translate", upload.single("file"), async (req, res) => {
+  try {
+    const content = fs.readFileSync(req.file.path, "utf8");
+    const subs = parseSRT(content); // bạn đã có hàm này
+    const chunks = splitSRT(subs, 20);
+
+    let translated = [];
+    let done = 0;
+
+    for (const chunk of chunks) {
+      const result = await translateChunk(chunk); // gọi AI
+      translated.push(...result);
+      done++;
+
+      // 🔥 gửi progress realtime
+      res.write(JSON.stringify({
+        progress: Math.round((done / chunks.length) * 100)
+      }) + "\n");
+    }
+
+    res.write(JSON.stringify({
+      done: true,
+      result: buildSRT(translated)
+    }));
+    res.end();
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Lỗi dịch file" });
+  }
+});
+reader.onload = () => {
+  const lines = reader.result.split("\n");
+
+  lines.forEach(line => {
+    if (!line.trim()) return;
+    const data = JSON.parse(line);
+
+    if (data.progress) {
+      progressBar.style.width = data.progress + "%";
+    }
+
+    if (data.done) {
+      showTranslatedResult(data.result);
+      progressBar.style.width = "100%";
+      enableUI();
+    }
+  });
+};
+setTimeout(() => {
+  if (progress < 100) {
+    showWarning("Dịch chậm, đang thử lại...");
+  }
+}, 60000);
