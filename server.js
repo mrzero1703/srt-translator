@@ -1,20 +1,47 @@
+// Gemini
+require("dotenv").config();
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
-const { translate } = require("@vitalets/google-translate-api"); // ← SỬA Ở ĐÂY
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash"
+});
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
-
-app.use(express.static("public"));
 const HISTORY_FILE = "history.json";
 
+app.use(express.static("public"));
+
+// Hàm dịch từng đoạn bằng Gemini
+async function translateWithGemini(text) {
+  try {
+    const response = await model.generate({
+      prompt: `Dịch đoạn sau từ tiếng Trung sang tiếng Việt: "${text}"`,
+      temperature: 0.3,
+      maxOutputTokens: 500
+    });
+    return response.candidates[0].content;
+  } catch (err) {
+    console.error("Lỗi dịch Gemini:", err);
+    return text; // trả về nguyên văn nếu dịch lỗi
+  }
+}
+
+// Hàm lưu lịch sử
 function saveHistory(item) {
-  const history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+  let history = [];
+  if (fs.existsSync(HISTORY_FILE)) {
+    history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+  }
   history.unshift(item);
   fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
 }
 
+// Parse và build SRT
 function parseSRT(content) {
   return content.split("\n\n").map(block => {
     const lines = block.split("\n");
@@ -30,98 +57,92 @@ function parseSRT(content) {
 }
 
 function buildSRT(blocks) {
-  return blocks.map(b =>
-    `${b.index}\n${b.time}\n${b.text}\n`
-  ).join("\n");
+  return blocks.map(b => `${b.index}\n${b.time}\n${b.text}\n`).join("\n");
 }
-app.post("/translate", upload.single("srt"), async (req, res) => {
-  const input = fs.readFileSync(req.file.path, "utf8");
-  const blocks = parseSRT(input);
 
-  for (let block of blocks) {
-    if (block.text.trim() !== "") {
-      const result = await translate(block.text, {
-        from: "zh-cn",
-        to: "vi"
-      });
-      block.text = result.text;
-    }
-  }
-
-  const output = buildSRT(blocks);
-  const fileName = "translated.srt";
-  const outputPath = `uploads/${fileName}`;
-
-  fs.writeFileSync(outputPath, output, "utf8");
-
-  const historyItem = {
-    id: Date.now(),
-    fileName: req.file.originalname,
-    time: new Date().toLocaleString("vi-VN"),
-    content: output
-  };
-
-  saveHistory(historyItem);
-
-  res.json({
-    text: output,
-    file: fileName,
-    history: historyItem
-  });
-
-});
-app.get("/history", (req, res) => {
-  const history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
-  res.json(history);
-});
-
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
-function splitSRT(subtitles, chunkSize = 20) {
+// Chia nhỏ subtitles thành chunk
+function splitSRT(subtitles, chunkSize = 15) {
   const chunks = [];
   for (let i = 0; i < subtitles.length; i += chunkSize) {
     chunks.push(subtitles.slice(i, i + chunkSize));
   }
   return chunks;
 }
+
+// Hàm dịch chunk
+async function translateChunk(blocks) {
+  const translated = [];
+  for (const block of blocks) {
+    if (block.text.trim() !== "") {
+      block.text = await translateWithGemini(block.text);
+    }
+    translated.push(block);
+  }
+  return translated;
+}
+
+// Route dịch SRT
 app.post("/translate", upload.single("file"), async (req, res) => {
   try {
     const content = fs.readFileSync(req.file.path, "utf8");
-    const subs = parseSRT(content); // bạn đã có hàm này
-    const chunks = splitSRT(subs, 20);
+    const subs = parseSRT(content);
+    const chunks = splitSRT(subs, 15);
 
     let translated = [];
     let done = 0;
 
+    res.setHeader("Content-Type", "application/json");
+
     for (const chunk of chunks) {
-      const result = await translateChunk(chunk); // gọi AI
+      const result = await translateChunk(chunk);
       translated.push(...result);
       done++;
 
-      // 🔥 gửi progress realtime
+      // gửi progress
       res.write(JSON.stringify({
-        progress: Math.round((done / chunks.length) * 100)
+        progress: Math.round(done / chunks.length * 100)
       }) + "\n");
     }
 
+    const output = buildSRT(translated);
+    const fileName = "translated.srt";
+    const outputPath = `uploads/${fileName}`;
+    fs.writeFileSync(outputPath, output, "utf8");
+
+    const historyItem = {
+      id: Date.now(),
+      fileName: req.file.originalname,
+      time: new Date().toLocaleString("vi-VN"),
+      content: output
+    };
+    saveHistory(historyItem);
+
+    // gửi kết quả cuối
     res.write(JSON.stringify({
       done: true,
-      result: buildSRT(translated)
+      result: output,
+      file: fileName,
+      history: historyItem
     }));
     res.end();
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Lỗi dịch file" });
+    res.status(500).json({ error: "Lỗi dịch Gemini" });
   }
-  setTimeout(() => {
-    if (progress < 100) {
-      showWarning("Dịch chậm, đang thử lại...");
-    }
-  }, 60000);
-
 });
 
+// Lấy lịch sử
+app.get("/history", (req, res) => {
+  let history = [];
+  if (fs.existsSync(HISTORY_FILE)) {
+    history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+  }
+  res.json(history);
+});
+
+// Port
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () =>
+  console.log(`🚀 Server chạy tại http://localhost:${PORT}`)
+);
