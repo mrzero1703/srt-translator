@@ -4,16 +4,14 @@ const multer = require("multer");
 const fs = require("fs");
 const { translate } = require("@vitalets/google-translate-api");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { Translate } = require("@google-cloud/translate").v2;
+
 const app = express();
 const upload = multer({ dest: "uploads/" });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
 });
-const translateClient = new Translate({
-  key: process.env.GOOGLE_API_KEY,
-});
+
 app.use(express.static("public"));
 const HISTORY_FILE = "history.json";
 
@@ -189,21 +187,18 @@ app.get("/history", (req, res) => {
   if (fs.existsSync(HISTORY_FILE)) {
     history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
   }
-  res.json({
-    text: output,
-  file: "translated.srt"
-  });
+  res.json(history);;
 });
 
 
 
-app.listen(3000, () =>
-  console.log("🚀 Server chạy tại http://localhost:3000")
-);
+// app.listen(3000, () =>
+//   console.log("🚀 Server chạy tại http://localhost:3000")
+// );
 
 
 // Quan trọng cho Render: Lắng nghe trên cổng do môi trường cung cấp
-// const PORT = process.env.PORT || 3000;
-// app.listen(PORT, () => {
-//   console.log(`Server is running on port ${PORT}`);
-// });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
