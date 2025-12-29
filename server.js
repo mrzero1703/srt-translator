@@ -4,15 +4,15 @@ const multer = require("multer");
 const fs = require("fs");
 const { translate } = require("@vitalets/google-translate-api");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { Translate } = require("@google-cloud/translate").v2;
 const app = express();
 const upload = multer({ dest: "uploads/" });
-// const OpenAI = require("openai");
-// const openai = new OpenAI({
-//   apiKey: process.env.OPENAI_API_KEY,
-// });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
+});
+const translate = new Translate({
+  key: process.env.GG_TRANSLATE_KEY
 });
 app.use(express.static("public"));
 const HISTORY_FILE = "history.json";
@@ -55,8 +55,6 @@ function splitArray(arr, size = 5) {
   }
   return res;
 }
-
-/* ===== OPENAI TRANSLATE ===== */
 
 async function translateWithGemini(lines) {
   const prompt = `
@@ -112,13 +110,25 @@ async function translateWithGoogle(lines) {
 
   return results;
 }
-async function translateSmart(lines) {
+async function translateSafe(lines) {
   try {
-    return await translateWithGemini(lines);
+    // ⏱ timeout chống Gemini treo
+    const geminiResult = await Promise.race([
+      translateWithGemini(lines),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Gemini timeout")), 20000)
+      )
+    ]);
+
+    return geminiResult;
+
   } catch (err) {
+    console.warn("⚠ Gemini lỗi → dùng Google Translate");
+
     return await translateWithGoogle(lines);
   }
 }
+
 
 /* ===== ROUTE ===== */
 
@@ -144,7 +154,9 @@ if (!req.file) {
       const chunk = chunks[i];
       const texts = chunk.map(b => b.text || " ");
 
-      const results = await translateSmart(texts);
+      // const results = await translateSmart(texts);
+      const results = await translateSafe(texts);
+
 
 
       chunk.forEach((b, idx) => {
@@ -167,7 +179,8 @@ if (!req.file) {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Lỗi dịch OpenAI" });
+    res.status(500).json({ error: "Lỗi dịch Gemini / Google Translate" });
+
   }
 });
 //lịch sử
