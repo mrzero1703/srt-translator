@@ -1,8 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
-const { translate } = require("@vitalets/google-translate-api");
+// const fs = require("fs");
+// const { translate } = require("@vitalets/google-translate-api");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
@@ -10,6 +10,11 @@ const upload = multer({ dest: "uploads/" });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
+});
+const { Translate } = require("@google-cloud/translate").v2;
+
+const translate = new Translate({
+  key: process.env.GG_TRANSLATE_KEY
 });
 
 app.use(express.static("public"));
