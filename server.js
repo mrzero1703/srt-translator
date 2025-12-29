@@ -192,13 +192,13 @@ app.get("/history", (req, res) => {
 
 
 
-// app.listen(3000, () =>
-//   console.log("🚀 Server chạy tại http://localhost:3000")
-// );
+app.listen(3000, () =>
+  console.log("🚀 Server chạy tại http://localhost:3000")
+);
 
 
 // Quan trọng cho Render: Lắng nghe trên cổng do môi trường cung cấp
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// const PORT = process.env.PORT || 3000;
+// app.listen(PORT, () => {
+//   console.log(`Server is running on port ${PORT}`);
+// });
